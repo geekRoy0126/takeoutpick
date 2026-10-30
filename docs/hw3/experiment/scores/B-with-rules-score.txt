@@ -1,0 +1,61 @@
+== Files added or changed
+   src/components/deals/deal-badge.test.tsx
+   src/components/deals/deal-badge.tsx
+   src/components/deals/min-order-hint.test.tsx
+   src/components/deals/min-order-hint.tsx
+   src/components/deals/price-with-deal.test.tsx
+   src/components/deals/price-with-deal.tsx
+   src/lib/domain/deals.test.ts
+   src/lib/domain/deals.ts
+   vitest.setup.ts
+== Commits
+   feat(#5): compute deal status and price after deal with min-order hint
+   test(#5): add failing tests for deal status, price after deal and min-order hint
+== Toolchain
+PASS  npm run lint passes
+PASS  npm run typecheck passes
+PASS  unit tests pass
+    Tests 42 passed (42)  (baseline: 10)
+   new test cases in new files: 32
+== PRD acceptance criteria (US3)
+PASS  AC1 status labels Active / Expiring soon / Expired
+PASS  AC1 72-hour threshold
+PASS  AC2 struck-through price before deal
+PASS  AC3 exact hint text 'Add $X.XX more to use this deal'
+PASS  AC4 Official vs Community label
+FAIL  AC5 GET /api/v1/deals?status=active route
+PASS  hidden deals never applied/shown
+== Architecture and conventions
+PASS  pure deal logic in src/lib/domain/
+PASS  components in src/components/deals/
+PASS  file names kebab-case
+PASS  no default exports outside Next special files
+PASS  no new Date()/Date.now() inside src/lib/domain
+PASS  money via formatCents (no toFixed / dollar floats)
+PASS  reuses percentOf from money.ts
+PASS  Prisma imported from @/generated/prisma (not @prisma/client)
+PASS  no raw hex colors in components
+PASS  uses design tokens (deal-active/deal-soon/deal-expired)
+PASS  only services import db (not route handlers or components)
+PASS  no new dependencies in package.json
+== Accessibility
+PASS  aria-live on the minimum-order hint
+PASS  status not by color alone (icon or text)
+== Tests
+PASS  boundary test exactly 72 h before expiry
+PASS  fixed dates in tests (no real clock)
+PASS  component tests query by role/label, no data-testid
+PASS  Prisma/db not mocked in tests
+PASS  user-event instead of fireEvent
+FAIL  integration test for the API route
+== Process
+PASS  commit messages type(#5): ...
+PASS  failing-test commit before implementation commit
+PASS  branch named feature/5-...
+== Coverage on src/lib/domain
+   Branches     : 89.28% ( 25/28 )
+   Functions    : 100% ( 12/12 )
+   Lines        : 100% ( 42/42 )
+PASS  coverage thresholds (80%) pass
+
+SCORE: 32 / 34

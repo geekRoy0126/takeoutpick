@@ -1,0 +1,742 @@
+diff --git a/src/app/api/v1/deals/route.ts b/src/app/api/v1/deals/route.ts
+new file mode 100644
+index 0000000..c3174ba
+--- /dev/null
++++ b/src/app/api/v1/deals/route.ts
+@@ -0,0 +1,16 @@
++// GET /api/v1/deals?status=active&restaurantId=... — public list of non-hidden deals (US3 #5).
++import { ok, parseOrThrow, toErrorResponse } from "@/lib/api/http";
++import { listDeals } from "@/lib/server/services/deal-service";
++import { listDealsQuerySchema } from "@/lib/validation/deal";
++
++export async function GET(request: Request): Promise<Response> {
++  try {
++    const params = Object.fromEntries(new URL(request.url).searchParams);
++    const query = parseOrThrow(listDealsQuerySchema, params);
++    // Read the clock once per request and pass it down (AGENTS.md §1.3).
++    const deals = await listDeals({ ...query, now: new Date() });
++    return ok(deals);
++  } catch (err) {
++    return toErrorResponse(err);
++  }
++}
+diff --git a/src/components/deals/deal-badge.test.tsx b/src/components/deals/deal-badge.test.tsx
+new file mode 100644
+index 0000000..3a69278
+--- /dev/null
++++ b/src/components/deals/deal-badge.test.tsx
+@@ -0,0 +1,38 @@
++import { render, screen } from "@testing-library/react";
++import { describe, expect, it } from "vitest";
++
++import { DealBadge } from "./deal-badge";
++
++describe("DealBadge", () => {
++  it("shows 'Active' for an active deal", () => {
++    render(<DealBadge status="active" source="OFFICIAL" />);
++    expect(screen.getByText("Active")).toBeInTheDocument();
++  });
++
++  it("shows 'Expiring soon' for a deal 72 hours or less from expiry", () => {
++    render(<DealBadge status="expiring_soon" source="OFFICIAL" />);
++    expect(screen.getByText("Expiring soon")).toBeInTheDocument();
++  });
++
++  it("shows 'Expired' for an expired deal", () => {
++    render(<DealBadge status="expired" source="OFFICIAL" />);
++    expect(screen.getByText("Expired")).toBeInTheDocument();
++  });
++
++  it("labels an official deal 'Official'", () => {
++    render(<DealBadge status="active" source="OFFICIAL" />);
++    expect(screen.getByText("Official")).toBeInTheDocument();
++    expect(screen.queryByText("Community")).not.toBeInTheDocument();
++  });
++
++  it("labels a community deal 'Community'", () => {
++    render(<DealBadge status="active" source="COMMUNITY" />);
++    expect(screen.getByText("Community")).toBeInTheDocument();
++    expect(screen.queryByText("Official")).not.toBeInTheDocument();
++  });
++
++  it("names the status and source together for assistive tech", () => {
++    render(<DealBadge status="expiring_soon" source="COMMUNITY" />);
++    expect(screen.getByRole("group", { name: "Deal status: Expiring soon, Community deal" })).toBeInTheDocument();
++  });
++});
+diff --git a/src/components/deals/deal-badge.tsx b/src/components/deals/deal-badge.tsx
+new file mode 100644
+index 0000000..e2e9eef
+--- /dev/null
++++ b/src/components/deals/deal-badge.tsx
+@@ -0,0 +1,70 @@
++import type { DealSource, DealStatus } from "@/lib/domain/deals";
++
++type DealBadgeProps = {
++  status: DealStatus;
++  source: DealSource;
++};
++
++const STATUS_LABEL: Record<DealStatus, string> = {
++  active: "Active",
++  expiring_soon: "Expiring soon",
++  expired: "Expired",
++};
++
++// Verified AA pairs only: text-surface on bg-deal-* (AGENTS.md §6.2).
++const STATUS_CLASS: Record<DealStatus, string> = {
++  active: "bg-deal-active",
++  expiring_soon: "bg-deal-soon",
++  expired: "bg-deal-expired",
++};
++
++const SOURCE_LABEL: Record<DealSource, string> = {
++  OFFICIAL: "Official",
++  COMMUNITY: "Community",
++};
++
++/** Status pill (color + word + icon) with the Official/Community tag beside it. */
++export function DealBadge({ status, source }: DealBadgeProps) {
++  const statusLabel = STATUS_LABEL[status];
++  const sourceLabel = SOURCE_LABEL[source];
++  return (
++    <span
++      role="group"
++      aria-label={`Deal status: ${statusLabel}, ${sourceLabel} deal`}
++      className="inline-flex items-center gap-2"
++    >
++      <span
++        className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium text-surface ${STATUS_CLASS[status]}`}
++      >
++        <StatusIcon status={status} />
++        <span>{statusLabel}</span>
++      </span>
++      <span className="rounded-full border border-line bg-surface-muted px-2 py-0.5 text-xs font-medium text-ink-muted">
++        {sourceLabel}
++      </span>
++    </span>
++  );
++}
++
++// TODO(#5): switch to lucide-react (CheckCircle / Clock / XCircle) once it can be installed.
++function StatusIcon({ status }: { status: DealStatus }) {
++  const paths: Record<DealStatus, string> = {
++    active: "M5 12.5l4 4 10-10",
++    expiring_soon: "M12 7v5l3 2M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z",
++    expired: "M6 6l12 12M18 6L6 18",
++  };
++  return (
++    <svg
++      aria-hidden="true"
++      viewBox="0 0 24 24"
++      className="size-3.5"
++      fill="none"
++      stroke="currentColor"
++      strokeWidth={2.5}
++      strokeLinecap="round"
++      strokeLinejoin="round"
++    >
++      <path d={paths[status]} />
++    </svg>
++  );
++}
+diff --git a/src/components/deals/min-order-hint.test.tsx b/src/components/deals/min-order-hint.test.tsx
+new file mode 100644
+index 0000000..28211c6
+--- /dev/null
++++ b/src/components/deals/min-order-hint.test.tsx
+@@ -0,0 +1,21 @@
++import { render, screen } from "@testing-library/react";
++import { describe, expect, it } from "vitest";
++
++import { MinOrderHint } from "./min-order-hint";
++
++describe("MinOrderHint", () => {
++  it("shows 'Add $5.01 more to use this deal' when $5.01 short", () => {
++    render(<MinOrderHint shortfallCents={501} />);
++    expect(screen.getByRole("status")).toHaveTextContent("Add $5.01 more to use this deal");
++  });
++
++  it("is a polite live region", () => {
++    render(<MinOrderHint shortfallCents={501} />);
++    expect(screen.getByRole("status")).toHaveAttribute("aria-live", "polite");
++  });
++
++  it("keeps the live region but shows no text when nothing is missing", () => {
++    render(<MinOrderHint shortfallCents={0} />);
++    expect(screen.getByRole("status")).toBeEmptyDOMElement();
++  });
++});
+diff --git a/src/components/deals/min-order-hint.tsx b/src/components/deals/min-order-hint.tsx
+new file mode 100644
+index 0000000..fa836e2
+--- /dev/null
++++ b/src/components/deals/min-order-hint.tsx
+@@ -0,0 +1,17 @@
++import { formatCents } from "@/lib/domain/money";
++
++type MinOrderHintProps = {
++  shortfallCents: number;
++};
++
++/**
++ * "Add $X.XX more to use this deal". The live region stays mounted even when empty so screen readers
++ * announce the hint when a quantity change makes it appear or disappear.
++ */
++export function MinOrderHint({ shortfallCents }: MinOrderHintProps) {
++  return (
++    <p role="status" aria-live="polite" className="text-sm font-medium text-deal-soon">
++      {shortfallCents > 0 ? `Add ${formatCents(shortfallCents)} more to use this deal` : null}
++    </p>
++  );
++}
+diff --git a/src/components/deals/price-with-deal.test.tsx b/src/components/deals/price-with-deal.test.tsx
+new file mode 100644
+index 0000000..9855a7b
+--- /dev/null
++++ b/src/components/deals/price-with-deal.test.tsx
+@@ -0,0 +1,72 @@
++import { render, screen } from "@testing-library/react";
++import userEvent from "@testing-library/user-event";
++import { useState } from "react";
++import { describe, expect, it } from "vitest";
++
++import type { DealTerms } from "@/lib/domain/deals";
++
++import { PriceWithDeal } from "./price-with-deal";
++
++const fiveOffOverTwenty: DealTerms = {
++  kind: "AMOUNT_OFF",
++  percentOff: null,
++  amountOffCents: 500,
++  minOrderCents: 2000,
++};
++
++describe("PriceWithDeal", () => {
++  it("shows the price before the deal struck through and the price after the deal", () => {
++    render(<PriceWithDeal subtotalCents={2500} deal={fiveOffOverTwenty} status="active" />);
++    expect(screen.getByText("$25.00").tagName).toBe("S");
++    expect(screen.getByText("$20.00")).toBeInTheDocument();
++    expect(screen.getByText("Price before deal")).toBeInTheDocument();
++    expect(screen.getByText("Price after deal")).toBeInTheDocument();
++  });
++
++  it("shows 'Add $5.01 more' when the subtotal is $14.99 and the minimum is $20", () => {
++    render(<PriceWithDeal subtotalCents={1499} deal={fiveOffOverTwenty} status="active" />);
++    expect(screen.getByRole("status")).toHaveTextContent("Add $5.01 more to use this deal");
++    expect(screen.getByText("$14.99").tagName).not.toBe("S");
++    expect(screen.queryByText("$9.99")).not.toBeInTheDocument();
++  });
++
++  it("applies the deal when the subtotal exactly equals the minimum", () => {
++    render(<PriceWithDeal subtotalCents={2000} deal={fiveOffOverTwenty} status="active" />);
++    expect(screen.getByText("$15.00")).toBeInTheDocument();
++    expect(screen.getByRole("status")).toBeEmptyDOMElement();
++  });
++
++  it("never applies an expired deal and shows no hint", () => {
++    render(<PriceWithDeal subtotalCents={2500} deal={fiveOffOverTwenty} status="expired" />);
++    expect(screen.getByText("$25.00").tagName).not.toBe("S");
++    expect(screen.queryByText("$20.00")).not.toBeInTheDocument();
++    expect(screen.queryByRole("status")).not.toBeInTheDocument();
++  });
++
++  it("shows the plain price when there is no deal", () => {
++    render(<PriceWithDeal subtotalCents={1250} deal={null} status={null} />);
++    expect(screen.getByText("$12.50")).toBeInTheDocument();
++    expect(screen.queryByRole("status")).not.toBeInTheDocument();
++  });
++
++  it("updates the hint live when the quantity changes", async () => {
++    const user = userEvent.setup();
++    function Harness() {
++      const [quantity, setQuantity] = useState(1);
++      return (
++        <>
++          <button type="button" onClick={() => setQuantity((q) => q + 1)}>
++            Add one
++          </button>
++          <PriceWithDeal subtotalCents={1499 * quantity} deal={fiveOffOverTwenty} status="active" />
++        </>
++      );
++    }
++    render(<Harness />);
++    expect(screen.getByRole("status")).toHaveTextContent("Add $5.01 more to use this deal");
++    await user.click(screen.getByRole("button", { name: "Add one" }));
++    expect(screen.getByRole("status")).toBeEmptyDOMElement();
++    expect(screen.getByText("$29.98").tagName).toBe("S");
++    expect(screen.getByText("$24.98")).toBeInTheDocument();
++  });
++});
+diff --git a/src/components/deals/price-with-deal.tsx b/src/components/deals/price-with-deal.tsx
+new file mode 100644
+index 0000000..95150dc
+--- /dev/null
++++ b/src/components/deals/price-with-deal.tsx
+@@ -0,0 +1,40 @@
++import { applyDeal, type DealStatus, type DealTerms } from "@/lib/domain/deals";
++import { formatCents } from "@/lib/domain/money";
++
++import { MinOrderHint } from "./min-order-hint";
++
++type PriceWithDealProps = {
++  subtotalCents: number;
++  /** Null when the dish has no deal. Status is computed by the caller from its `now` (AGENTS.md §1.3). */
++  deal: DealTerms | null;
++  status: DealStatus | null;
++};
++
++/** Struck-through price before the deal and bold price after; below the minimum, no discount plus a hint. */
++export function PriceWithDeal({ subtotalCents, deal, status }: PriceWithDealProps) {
++  if (!deal || !status || status === "expired") {
++    return <PlainPrice cents={subtotalCents} />;
++  }
++  const result = applyDeal(subtotalCents, deal, status);
++  return (
++    <div className="flex flex-col gap-1">
++      <div aria-live="polite" className="flex items-baseline gap-2">
++        {result.isApplied ? (
++          <>
++            <span className="sr-only">Price before deal</span>
++            <s className="text-sm text-ink-muted">{formatCents(subtotalCents)}</s>
++            <span className="sr-only">Price after deal</span>
++            <span className="text-lg font-semibold">{formatCents(result.afterCents)}</span>
++          </>
++        ) : (
++          <span className="text-lg font-semibold">{formatCents(subtotalCents)}</span>
++        )}
++      </div>
++      <MinOrderHint shortfallCents={result.shortfallCents} />
++    </div>
++  );
++}
++
++function PlainPrice({ cents }: { cents: number }) {
++  return <span className="text-lg font-semibold">{formatCents(cents)}</span>;
++}
+diff --git a/src/lib/domain/deals.test.ts b/src/lib/domain/deals.test.ts
+new file mode 100644
+index 0000000..cf51828
+--- /dev/null
++++ b/src/lib/domain/deals.test.ts
+@@ -0,0 +1,118 @@
++import { describe, expect, it } from "vitest";
++
++import { applyDeal, type DealTerms, getDealStatus } from "./deals";
++
++const NOW = new Date("2026-11-03T12:00:00Z");
++const HOUR_MS = 60 * 60 * 1000;
++const at = (hoursFromNow: number) => new Date(NOW.getTime() + hoursFromNow * HOUR_MS);
++
++const percent = (percentOff: number, minOrderCents = 0): DealTerms => ({
++  kind: "PERCENT_OFF",
++  percentOff,
++  amountOffCents: null,
++  minOrderCents,
++});
++const amount = (amountOffCents: number, minOrderCents = 0): DealTerms => ({
++  kind: "AMOUNT_OFF",
++  percentOff: null,
++  amountOffCents,
++  minOrderCents,
++});
++
++describe("getDealStatus", () => {
++  it("is 'active' when more than 72 hours remain", () => {
++    expect(getDealStatus(new Date(at(72).getTime() + 1), NOW)).toBe("active");
++    expect(getDealStatus(at(24 * 30), NOW)).toBe("active");
++  });
++
++  it("is 'expiring_soon' exactly 72 hours before expiry", () => {
++    expect(getDealStatus(at(72), NOW)).toBe("expiring_soon");
++  });
++
++  it("is 'expiring_soon' one millisecond before expiry", () => {
++    expect(getDealStatus(new Date(NOW.getTime() + 1), NOW)).toBe("expiring_soon");
++  });
++
++  it("is 'expired' exactly at expiry", () => {
++    expect(getDealStatus(NOW, NOW)).toBe("expired");
++  });
++
++  it("is 'expired' after expiry", () => {
++    expect(getDealStatus(at(-1), NOW)).toBe("expired");
++  });
++});
++
++describe("applyDeal", () => {
++  it("applies a percent-off deal with Math.round to the nearest cent", () => {
++    // 1999 × 15 / 100 = 299.85 → 300
++    expect(applyDeal(1999, percent(15), "active")).toEqual({
++      isApplied: true,
++      discountCents: 300,
++      afterCents: 1699,
++      shortfallCents: 0,
++    });
++  });
++
++  it("applies an amount-off deal", () => {
++    expect(applyDeal(2500, amount(500), "active")).toMatchObject({
++      isApplied: true,
++      discountCents: 500,
++      afterCents: 2000,
++    });
++  });
++
++  it("caps an amount-off larger than the subtotal at the subtotal", () => {
++    expect(applyDeal(800, amount(1000), "active")).toMatchObject({
++      isApplied: true,
++      discountCents: 800,
++      afterCents: 0,
++    });
++  });
++
++  it("gives no discount for 0% off", () => {
++    expect(applyDeal(1500, percent(0), "active")).toMatchObject({ discountCents: 0, afterCents: 1500 });
++  });
++
++  it("makes the price zero for 100% off", () => {
++    expect(applyDeal(1500, percent(100), "active")).toMatchObject({ discountCents: 1500, afterCents: 0 });
++  });
++
++  it("applies the deal when the subtotal exactly equals the minimum", () => {
++    expect(applyDeal(2000, amount(500, 2000), "active")).toMatchObject({
++      isApplied: true,
++      afterCents: 1500,
++      shortfallCents: 0,
++    });
++  });
++
++  it("does not apply the deal and reports $5.01 short when the subtotal is $14.99 and the minimum is $20", () => {
++    expect(applyDeal(1499, amount(500, 2000), "active")).toEqual({
++      isApplied: false,
++      discountCents: 0,
++      afterCents: 1499,
++      shortfallCents: 501,
++    });
++  });
++
++  it("applies an expiring-soon deal", () => {
++    expect(applyDeal(2000, percent(10), "expiring_soon")).toMatchObject({ isApplied: true, afterCents: 1800 });
++  });
++
++  it("never applies an expired deal and reports no shortfall", () => {
++    expect(applyDeal(1000, amount(500, 2000), "expired")).toEqual({
++      isApplied: false,
++      discountCents: 0,
++      afterCents: 1000,
++      shortfallCents: 0,
++    });
++  });
++
++  it("rejects non-integer cents", () => {
++    expect(() => applyDeal(10.5, percent(10), "active")).toThrow(TypeError);
++  });
++
++  it("treats a deal missing its value as no discount", () => {
++    expect(applyDeal(1000, { ...percent(10), percentOff: null }, "active")).toMatchObject({ discountCents: 0 });
++    expect(applyDeal(1000, { ...amount(100), amountOffCents: null }, "active")).toMatchObject({ discountCents: 0 });
++  });
++});
+diff --git a/src/lib/domain/deals.ts b/src/lib/domain/deals.ts
+new file mode 100644
+index 0000000..26928df
+--- /dev/null
++++ b/src/lib/domain/deals.ts
+@@ -0,0 +1,56 @@
++// Deal status and discount rules (docs/PRD.md §4, US3 #5). Pure: `now` is always passed in.
++import { percentOf } from "./money";
++
++export const EXPIRING_SOON_HOURS = 72;
++const HOUR_MS = 60 * 60 * 1000;
++
++export type DealStatus = "active" | "expiring_soon" | "expired";
++export type DealKind = "PERCENT_OFF" | "AMOUNT_OFF";
++export type DealSource = "OFFICIAL" | "COMMUNITY";
++
++export type DealTerms = {
++  kind: DealKind;
++  percentOff: number | null;
++  amountOffCents: number | null;
++  minOrderCents: number;
++};
++
++export type AppliedDeal = {
++  isApplied: boolean;
++  discountCents: number;
++  afterCents: number;
++  /** Cents still missing to reach the minimum; 0 when applied or when the deal can never apply. */
++  shortfallCents: number;
++};
++
++/** Expired when now ≥ expiresAt; expiring soon when ≤ 72 h remain; active otherwise. */
++export function getDealStatus(expiresAt: Date, now: Date): DealStatus {
++  const remainingMs = expiresAt.getTime() - now.getTime();
++  if (remainingMs <= 0) return "expired";
++  if (remainingMs <= EXPIRING_SOON_HOURS * HOUR_MS) return "expiring_soon";
++  return "active";
++}
++
++/** Applies a deal to a subtotal. Expired deals are never applied; below the minimum there is no discount. */
++export function applyDeal(subtotalCents: number, deal: DealTerms, status: DealStatus): AppliedDeal {
++  const notApplied = (shortfallCents: number): AppliedDeal => ({
++    isApplied: false,
++    discountCents: 0,
++    afterCents: subtotalCents,
++    shortfallCents,
++  });
++  if (!Number.isInteger(subtotalCents)) {
++    throw new TypeError(`Expected integer cents, got ${subtotalCents}`);
++  }
++  if (status === "expired") return notApplied(0);
++  if (subtotalCents < deal.minOrderCents) return notApplied(deal.minOrderCents - subtotalCents);
++
++  const discountCents = discountFor(subtotalCents, deal);
++  return { isApplied: true, discountCents, afterCents: subtotalCents - discountCents, shortfallCents: 0 };
++}
++
++function discountFor(subtotalCents: number, deal: DealTerms): number {
++  if (deal.kind === "PERCENT_OFF") return percentOf(subtotalCents, deal.percentOff ?? 0);
++  // Amount-off never exceeds the subtotal (PRD §4.2).
++  return Math.min(deal.amountOffCents ?? 0, subtotalCents);
++}
+diff --git a/src/lib/server/services/deal-service.ts b/src/lib/server/services/deal-service.ts
+new file mode 100644
+index 0000000..3c0ec63
+--- /dev/null
++++ b/src/lib/server/services/deal-service.ts
+@@ -0,0 +1,45 @@
++import "server-only";
++
++import { type DealKind, type DealSource, type DealStatus, getDealStatus } from "@/lib/domain/deals";
++import { db } from "@/lib/server/db";
++import type { ListDealsQuery } from "@/lib/validation/deal";
++
++export type DealDto = {
++  id: string;
++  restaurantId: string;
++  title: string;
++  kind: DealKind;
++  percentOff: number | null;
++  amountOffCents: number | null;
++  minOrderCents: number;
++  expiresAt: string;
++  source: DealSource;
++  status: DealStatus;
++};
++
++type ListDealsInput = ListDealsQuery & { now: Date };
++
++/** Non-hidden deals, soonest expiry first. Hidden deals are never returned (PRD §4). */
++export async function listDeals({ status, restaurantId, now }: ListDealsInput): Promise<DealDto[]> {
++  const expiresAt = status === "active" ? { gt: now } : status === "expired" ? { lte: now } : undefined;
++  const rows = await db.deal.findMany({
++    where: { hidden: false, restaurantId, expiresAt },
++    orderBy: [{ expiresAt: "asc" }, { id: "asc" }],
++    select: {
++      id: true,
++      restaurantId: true,
++      title: true,
++      kind: true,
++      percentOff: true,
++      amountOffCents: true,
++      minOrderCents: true,
++      expiresAt: true,
++      source: true,
++    },
++  });
++  return rows.map((row) => ({
++    ...row,
++    expiresAt: row.expiresAt.toISOString(),
++    status: getDealStatus(row.expiresAt, now),
++  }));
++}
+diff --git a/src/lib/validation/deal.test.ts b/src/lib/validation/deal.test.ts
+new file mode 100644
+index 0000000..5c95c44
+--- /dev/null
++++ b/src/lib/validation/deal.test.ts
+@@ -0,0 +1,24 @@
++import { describe, expect, it } from "vitest";
++
++import { listDealsQuerySchema } from "./deal";
++
++describe("listDealsQuerySchema", () => {
++  it("accepts status=active and a restaurantId", () => {
++    expect(listDealsQuerySchema.parse({ status: "active", restaurantId: "r1" })).toEqual({
++      status: "active",
++      restaurantId: "r1",
++    });
++  });
++
++  it("accepts an empty query", () => {
++    expect(listDealsQuerySchema.parse({})).toEqual({});
++  });
++
++  it("rejects an unknown status", () => {
++    expect(listDealsQuerySchema.safeParse({ status: "soon" }).success).toBe(false);
++  });
++
++  it("rejects an over-long restaurantId", () => {
++    expect(listDealsQuerySchema.safeParse({ restaurantId: "x".repeat(81) }).success).toBe(false);
++  });
++});
+diff --git a/src/lib/validation/deal.ts b/src/lib/validation/deal.ts
+new file mode 100644
+index 0000000..f18b8b2
+--- /dev/null
++++ b/src/lib/validation/deal.ts
+@@ -0,0 +1,9 @@
++import { z } from "zod";
++
++// `status=active` means "still usable": active or expiring soon, i.e. not expired (US3 #5).
++export const listDealsQuerySchema = z.object({
++  status: z.enum(["active", "expired"]).optional(),
++  restaurantId: z.string().min(1).max(80).optional(),
++});
++
++export type ListDealsQuery = z.infer<typeof listDealsQuerySchema>;
+diff --git a/tests/integration/deals.int.test.ts b/tests/integration/deals.int.test.ts
+new file mode 100644
+index 0000000..876756a
+--- /dev/null
++++ b/tests/integration/deals.int.test.ts
+@@ -0,0 +1,138 @@
++// GET /api/v1/deals and listDeals against a real Postgres (US3, #5).
++// Run: `docker compose up -d db && npx prisma migrate dev && npm run test:int`.
++import { beforeEach, describe, expect, it } from "vitest";
++
++import { GET } from "@/app/api/v1/deals/route";
++import { db } from "@/lib/server/db";
++import { listDeals } from "@/lib/server/services/deal-service";
++
++const NOW = new Date("2026-11-03T12:00:00Z");
++const HOUR_MS = 60 * 60 * 1000;
++const at = (hoursFromNow: number) => new Date(NOW.getTime() + hoursFromNow * HOUR_MS);
++// The route reads the real clock (it owns `now`), so its fixtures are relative to the real time.
++const fromRealNow = (hours: number) => new Date(Date.now() + hours * HOUR_MS);
++
++type Seed = { restaurantId: string; otherRestaurantId: string; userId: string };
++type DealExtra = { hidden?: boolean; restaurantId?: string };
++
++async function seedBase(): Promise<Seed> {
++  const user = await db.user.create({
++    data: { email: "diner@example.com", name: "Diner", passwordHash: "x" },
++  });
++  const restaurant = await db.restaurant.create({ data: { name: "Pho Place", cuisine: "Vietnamese" } });
++  const other = await db.restaurant.create({ data: { name: "Taco Spot", cuisine: "Mexican" } });
++  return { restaurantId: restaurant.id, otherRestaurantId: other.id, userId: user.id };
++}
++
++async function createDeal(seed: Seed, title: string, expiresAt: Date, extra: DealExtra = {}) {
++  return db.deal.create({
++    data: {
++      title,
++      kind: "PERCENT_OFF",
++      percentOff: 10,
++      minOrderCents: 2000,
++      expiresAt,
++      source: "OFFICIAL",
++      restaurantId: extra.restaurantId ?? seed.restaurantId,
++      createdById: seed.userId,
++      hidden: extra.hidden ?? false,
++    },
++  });
++}
++
++beforeEach(async () => {
++  await db.deal.deleteMany();
++  await db.restaurant.deleteMany();
++  await db.user.deleteMany();
++});
++
++describe("listDeals", () => {
++  it("returns only non-hidden, non-expired deals, soonest expiry first, for status=active", async () => {
++    const seed = await seedBase();
++    await createDeal(seed, "Later", at(200));
++    await createDeal(seed, "Soon", at(10));
++    await createDeal(seed, "Expired", at(-1));
++    await createDeal(seed, "Exactly now", NOW);
++    await createDeal(seed, "Hidden", at(5), { hidden: true });
++
++    const deals = await listDeals({ status: "active", now: NOW });
++
++    expect(deals.map((d) => d.title)).toEqual(["Soon", "Later"]);
++    expect(deals.map((d) => d.status)).toEqual(["expiring_soon", "active"]);
++  });
++
++  it("never returns hidden deals, even without a status filter", async () => {
++    const seed = await seedBase();
++    await createDeal(seed, "Visible expired", at(-5));
++    await createDeal(seed, "Hidden", at(5), { hidden: true });
++
++    const deals = await listDeals({ now: NOW });
++
++    expect(deals.map((d) => d.title)).toEqual(["Visible expired"]);
++    expect(deals[0]?.status).toBe("expired");
++  });
++
++  it("returns only expired deals for status=expired", async () => {
++    const seed = await seedBase();
++    await createDeal(seed, "Expired", at(-5));
++    await createDeal(seed, "Active", at(100));
++
++    const deals = await listDeals({ status: "expired", now: NOW });
++
++    expect(deals.map((d) => d.title)).toEqual(["Expired"]);
++  });
++
++  it("filters by restaurantId", async () => {
++    const seed = await seedBase();
++    await createDeal(seed, "Mine", at(100));
++    await createDeal(seed, "Theirs", at(100), { restaurantId: seed.otherRestaurantId });
++
++    const deals = await listDeals({ status: "active", restaurantId: seed.restaurantId, now: NOW });
++
++    expect(deals.map((d) => d.title)).toEqual(["Mine"]);
++  });
++
++  it("returns a DTO with ISO dates and no internal fields", async () => {
++    const seed = await seedBase();
++    await createDeal(seed, "Soon", at(10));
++
++    const [deal] = await listDeals({ status: "active", now: NOW });
++
++    expect(deal).toEqual({
++      id: expect.any(String),
++      restaurantId: seed.restaurantId,
++      title: "Soon",
++      kind: "PERCENT_OFF",
++      percentOff: 10,
++      amountOffCents: null,
++      minOrderCents: 2000,
++      expiresAt: at(10).toISOString(),
++      source: "OFFICIAL",
++      status: "expiring_soon",
++    });
++  });
++});
++
++describe("GET /api/v1/deals", () => {
++  it("returns only non-hidden, non-expired deals, soonest expiry first, for ?status=active", async () => {
++    const seed = await seedBase();
++    await createDeal(seed, "Later", fromRealNow(200));
++    await createDeal(seed, "Soon", fromRealNow(10));
++    await createDeal(seed, "Expired", fromRealNow(-1));
++    await createDeal(seed, "Hidden", fromRealNow(5), { hidden: true });
++
++    const res = await GET(new Request("http://localhost/api/v1/deals?status=active"));
++
++    expect(res.status).toBe(200);
++    const body = (await res.json()) as { data: { title: string }[] };
++    expect(body.data.map((d) => d.title)).toEqual(["Soon", "Later"]);
++  });
++
++  it("answers 422 in the error envelope for an unknown status", async () => {
++    const res = await GET(new Request("http://localhost/api/v1/deals?status=bogus"));
++
++    expect(res.status).toBe(422);
++    const body = (await res.json()) as { error: { code: string } };
++    expect(body.error.code).toBe("VALIDATION_FAILED");
++  });
++});

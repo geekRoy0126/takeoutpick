@@ -1,0 +1,61 @@
+== Files added or changed
+   src/app/api/v1/deals/route.test.ts
+   src/app/api/v1/deals/route.ts
+   src/components/deals/DealBadge.tsx
+   src/components/deals/MinOrderHint.tsx
+   src/components/deals/PriceWithDeal.tsx
+   src/components/deals/deals.test.tsx
+   src/lib/domain/deals.test.ts
+   src/lib/domain/deals.ts
+   vitest.setup.ts
+== Commits
+   feat(#5): deal status badges, price after deal and min-order hint
+   test(#5): deal status, price after deal and min-order hint
+== Toolchain
+PASS  npm run lint passes
+PASS  npm run typecheck passes
+PASS  unit tests pass
+    Tests 47 passed (47)  (baseline: 10)
+   new test cases in new files: 34
+== PRD acceptance criteria (US3)
+PASS  AC1 status labels Active / Expiring soon / Expired
+PASS  AC1 72-hour threshold
+PASS  AC2 struck-through price before deal
+PASS  AC3 exact hint text 'Add $X.XX more to use this deal'
+PASS  AC4 Official vs Community label
+PASS  AC5 GET /api/v1/deals?status=active route
+PASS  hidden deals never applied/shown
+== Architecture and conventions
+PASS  pure deal logic in src/lib/domain/
+PASS  components in src/components/deals/
+FAIL  file names kebab-case
+PASS  no default exports outside Next special files
+FAIL  no new Date()/Date.now() inside src/lib/domain
+PASS  money via formatCents (no toFixed / dollar floats)
+PASS  reuses percentOf from money.ts
+PASS  Prisma imported from @/generated/prisma (not @prisma/client)
+PASS  no raw hex colors in components
+PASS  uses design tokens (deal-active/deal-soon/deal-expired)
+FAIL  only services import db (not route handlers or components)
+PASS  no new dependencies in package.json
+== Accessibility
+PASS  aria-live on the minimum-order hint
+PASS  status not by color alone (icon or text)
+== Tests
+PASS  boundary test exactly 72 h before expiry
+FAIL  fixed dates in tests (no real clock)
+PASS  component tests query by role/label, no data-testid
+FAIL  Prisma/db not mocked in tests
+PASS  user-event instead of fireEvent
+FAIL  integration test for the API route
+== Process
+PASS  commit messages type(#5): ...
+PASS  failing-test commit before implementation commit
+PASS  branch named feature/5-...
+== Coverage on src/lib/domain
+   Branches     : 94.28% ( 33/35 )
+   Functions    : 100% ( 14/14 )
+   Lines        : 100% ( 40/40 )
+PASS  coverage thresholds (80%) pass
+
+SCORE: 28 / 34

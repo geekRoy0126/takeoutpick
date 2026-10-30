@@ -1,0 +1,3 @@
+035e201 feat(#5): deal status badges, price after deal and min-order hint
+21c9e34 test(#5): deal status, price after deal and min-order hint
+ae31869 baseline
