@@ -4,7 +4,8 @@ Decide what takeout to order in seconds, by true total cost (deals, fees, tip, t
 Course Project 2 (CS6983 AI Coding, Fall 2026): Diner, Partner and Admin roles, real-time Group Pick rooms and a public REST API.
 
 - Product requirements: [docs/PRD.md](docs/PRD.md) · UI spec: [docs/ui-spec.md](docs/ui-spec.md)
-- Rules for AI agents and humans: [AGENTS.md](AGENTS.md)
+- Rules for AI agents and humans: [AGENTS.md](AGENTS.md) · HW3 evidence (before/after test, reflection): [docs/hw3/](docs/hw3/README.md)
+- Scrum board: [TakeoutPick P2 Board](https://github.com/users/geekRoy0126/projects/2)
 
 ## Local setup
 

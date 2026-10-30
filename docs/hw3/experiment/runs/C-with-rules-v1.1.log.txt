@@ -1,0 +1,3 @@
+04871b1 feat(#5): compute deal status and price after deal, add GET /api/v1/deals
+b76c95f test(#5): add failing tests for deal status, price after deal and min-order hint
+b153801 baseline
