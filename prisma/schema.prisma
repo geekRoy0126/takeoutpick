@@ -1,0 +1,231 @@
+// TakeoutPick data model. Source of truth for the database; see docs/PRD.md Section 4 for pricing rules.
+// Conventions: money in integer cents (*Cents), percents as whole numbers (*Percent), tax in basis points (*Bps),
+// all timestamps stored in UTC.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  DINER
+  PARTNER
+  ADMIN
+}
+
+enum HealthLevel {
+  HEALTHY
+  BALANCED
+  INDULGENT
+}
+
+enum DealKind {
+  PERCENT_OFF
+  AMOUNT_OFF
+}
+
+enum DealSource {
+  OFFICIAL // published by the restaurant's partner
+  COMMUNITY // added by a diner
+}
+
+enum OrderMode {
+  DELIVERY
+  PICKUP
+}
+
+enum RequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum RoomStatus {
+  OPEN
+  CLOSED
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  name         String
+  passwordHash String
+  role         Role     @default(DINER)
+  budgetCents  Int?
+  tipPercent   Int      @default(15)
+  taxRateBps   Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  ownedRestaurants Restaurant[]
+  deals            Deal[]
+  orders           Order[]
+  partnerRequests  PartnerRequest[] @relation("RequestedBy")
+  reviewedRequests PartnerRequest[] @relation("ReviewedBy")
+  hostedRooms      PickRoom[]
+  roomMemberships  RoomMember[]
+  nominations      Nomination[]
+  votes            Vote[]
+}
+
+model Restaurant {
+  id                String   @id @default(cuid())
+  name              String
+  cuisine           String // validated against CUISINES in src/lib/validation
+  address           String?
+  deliveryFeeCents  Int      @default(399)
+  serviceFeePercent Int      @default(15)
+  verified          Boolean  @default(false)
+  ownerId           String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  owner           User?            @relation(fields: [ownerId], references: [id], onDelete: SetNull)
+  dishes          Dish[]
+  deals           Deal[]
+  partnerRequests PartnerRequest[]
+
+  @@index([cuisine])
+  @@index([ownerId])
+}
+
+model Dish {
+  id           String      @id @default(cuid())
+  restaurantId String
+  name         String
+  description  String?
+  priceCents   Int
+  healthLevel  HealthLevel
+  isAvailable  Boolean     @default(true)
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  restaurant  Restaurant   @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  orders      Order[]
+  nominations Nomination[]
+  votes       Vote[]
+  wonRooms    PickRoom[]
+
+  @@index([restaurantId])
+}
+
+model Deal {
+  id             String     @id @default(cuid())
+  restaurantId   String
+  createdById    String
+  title          String
+  kind           DealKind
+  percentOff     Int? // set when kind = PERCENT_OFF (1–100)
+  amountOffCents Int? // set when kind = AMOUNT_OFF
+  minOrderCents  Int        @default(0)
+  expiresAt      DateTime
+  source         DealSource
+  hidden         Boolean    @default(false) // set by an admin; hidden deals are never shown or applied
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+
+  restaurant Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  createdBy  User       @relation(fields: [createdById], references: [id], onDelete: Cascade)
+
+  @@index([restaurantId, expiresAt])
+  @@index([expiresAt])
+}
+
+model Order {
+  id             String      @id @default(cuid())
+  userId         String
+  dishId         String
+  mode           OrderMode
+  quantity       Int         @default(1)
+  pricePaidCents Int
+  estimatedCents Int // estimate shown at the time of ordering, kept for the "differs by > $2" check
+  healthLevel    HealthLevel // snapshot of the dish's level when ordered
+  notes          String?
+  orderedAt      DateTime    @default(now())
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  dish Dish @relation(fields: [dishId], references: [id], onDelete: Restrict)
+
+  @@index([userId, orderedAt])
+}
+
+model PartnerRequest {
+  id           String        @id @default(cuid())
+  userId       String
+  restaurantId String
+  status       RequestStatus @default(PENDING)
+  message      String?
+  reviewedById String?
+  createdAt    DateTime      @default(now())
+  reviewedAt   DateTime?
+
+  user       User       @relation("RequestedBy", fields: [userId], references: [id], onDelete: Cascade)
+  reviewedBy User?      @relation("ReviewedBy", fields: [reviewedById], references: [id], onDelete: SetNull)
+  restaurant Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, restaurantId])
+  @@index([status])
+}
+
+model PickRoom {
+  id            String     @id @default(cuid())
+  code          String     @unique // 6 characters, shared with roommates
+  hostId        String
+  budgetCents   Int?
+  cuisine       String?
+  status        RoomStatus @default(OPEN)
+  winningDishId String?
+  createdAt     DateTime   @default(now())
+  closedAt      DateTime?
+
+  host        User         @relation(fields: [hostId], references: [id], onDelete: Cascade)
+  winningDish Dish?        @relation(fields: [winningDishId], references: [id], onDelete: SetNull)
+  members     RoomMember[]
+  nominations Nomination[]
+  votes       Vote[]
+}
+
+model RoomMember {
+  roomId   String
+  userId   String
+  joinedAt DateTime @default(now())
+
+  room PickRoom @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  user User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([roomId, userId])
+}
+
+model Nomination {
+  id        String   @id @default(cuid())
+  roomId    String
+  dishId    String
+  userId    String
+  createdAt DateTime @default(now())
+
+  room PickRoom @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  dish Dish     @relation(fields: [dishId], references: [id], onDelete: Cascade)
+  user User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([roomId, dishId])
+}
+
+// One vote per member per room; changing your vote updates this row.
+model Vote {
+  roomId    String
+  userId    String
+  dishId    String
+  updatedAt DateTime @updatedAt
+
+  room PickRoom @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  user User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  dish Dish     @relation(fields: [dishId], references: [id], onDelete: Cascade)
+
+  @@id([roomId, userId])
+}
